@@ -1,0 +1,406 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(RcmdrMisc)
+library(ggdendro)
+library(corrplot)
+library(circlize)
+library(FactoMineR)
+library(ggcorrplot)
+library(dplyr)
+library(pracma)
+library(abind)
+library(tinytex)
+library(ggplot2)
+library(tidyverse)
+library(factoextra)
+library(fitdistrplus)
+library(logspline)
+library(broom)
+library(MASS)
+library(knitr)
+library(kableExtra)
+library(multcomp)
+library(lubridate)
+library(openxlsx)
+library(ggpubr)
+library(plotly)
+library(ggdendro)
+library(htmltools)
+library(vegan)
+library(ape)
+library(factoextra)
+library(tidyverse)
+library(RColorBrewer)
+library(reshape2)
+```
+
+
+```{r}
+CHAPALA_previo<- read.xlsx("maindata.xlsx", detectDates = TRUE)
+
+CHAPALA_previo<- as_tibble(CHAPALA_previo)
+
+CHAPALA_previo$FECHA <- as_date(CHAPALA_previo$FECHA)
+
+CHAPALA_previo$CLAVE_SITIO <- as_factor(CHAPALA_previo$CLAVE_SITIO)
+
+nom1 <- names(CHAPALA_previo)
+
+
+EST_CH <- tibble(CLAVE_SITIO=levels(CHAPALA_previo$CLAVE_SITIO),
+                 EST=c(paste0("CH-0",1:9),paste0("CH-",10:27)))
+
+EST_CH$CLAVE_SITIO <- factor(EST_CH$CLAVE_SITIO)
+EST_CH$EST <- factor(EST_CH$EST)
+
+CHAPALA_previo <-  CHAPALA_previo %>% left_join(EST_CH, by="CLAVE_SITIO")
+CHAPALA_previo <- dplyr::select(CHAPALA_previo, EST, CLAVE_SITIO, FECHA, ALC_FEN:TEMP_AGUA_7)
+
+CHAPALA_NUM <- dplyr::select(CHAPALA_previo, EST, CLAVE_SITIO, FECHA, where(is.numeric))
+
+write_csv(CHAPALA_NUM,"Chapala.csv", na="NA")
+
+
+```
+
+```{r}
+total_plot <- function(df, param){
+total_plot <- ggplot(df)+
+  geom_point(aes(FECHA, eval(as.name(param)), color=EST))+
+  scale_x_date(date_breaks="6 months", date_labels = "%b %Y")+
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust=1))+
+    labs(y=  param)
+}
+
+summary_param <- function(df, param){
+summary_par <- df %>% group_by(EST) %>% summarise(Count=n(),NoNA=sum(!is.na(!!sym(param))), mean=mean(!!sym(param), na.rm = TRUE), sd=sd(!!sym(param), na.rm = TRUE), min=min(!!sym(param), na.rm = TRUE), Q25=quantile(!!sym(param), 0.25, na.rm = TRUE), median=median(!!sym(param), na.rm = TRUE), Q75=quantile(!!sym(param), 0.75, na.rm = TRUE), max=max(!!sym(param), na.rm = TRUE), IQR=IQR(!!sym(param), na.rm=TRUE))  
+}
+
+box_param <- function(df, param){
+  df_EST <- levels(df$EST)
+  df_EST_n <- length(df_EST)
+  
+  if(df_EST_n<=12){
+  box_1 <- ggplot(df)+
+    geom_boxplot(aes(x=EST, y= eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+    the_boxes <- list("box_1"= box_1)
+  return(the_boxes)
+  }
+  
+  if(df_EST_n>12 &df_EST_n<=24){
+  box_1 <- ggplot(filter(df, EST %in% df_EST[1:12]))+
+    geom_boxplot(aes(x=EST, y= eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+  box_2 <- ggplot(filter(df, EST %in% df_EST[13:df_EST_n]))+
+    geom_boxplot(aes(EST, eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+  the_boxes <- list("box_1"= box_1, "box_2"= box_2)
+  return(the_boxes)
+  }
+  
+  if(df_EST_n>24){
+  box_1 <- ggplot(filter(df, EST %in% df_EST[1:12]))+
+    geom_boxplot(aes(x=EST, y= eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+  box_2 <- ggplot(filter(df, EST %in% df_EST[13:25]))+
+    geom_boxplot(aes(EST, eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+  box_3 <- ggplot(filter(df, EST %in% df_EST[26:df_EST_n]))+
+    geom_boxplot(aes(EST, eval(as.name(param)), color=EST), show.legend = FALSE)+
+    labs(y=param)+
+    theme_bw()
+the_boxes <- list("box_1"= box_1, "box_2"= box_2, "box_3"= box_3)
+  return(the_boxes)
+  }
+  
+  }
+
+
+
+nom_par <- names(CHAPALA_NUM)[4:144]
+k <- 6 #COLI_FEC = Fecal Coliforms
+```
+
+
+
+```{r}
+#COLI_FEC = Fecal Coliforms
+
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+
+
+```{r}
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+#Boxplots
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+
+
+
+
+
+
+```{r}
+#Coli Tot
+
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+
+
+```{r}
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+
+```{r}
+#E-coli
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+
+```{r}
+
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+
+
+```{r}
+#COT
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+
+
+```{r}
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+```{r}
+#COT_SOL
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+```{r}
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+```{r}
+
+#DBO_SOL
+data_par <- dplyr::select(CHAPALA_NUM, c("EST","FECHA", nom_par[k])) %>% na.omit()
+data_par$EST <- factor(data_par$EST)
+data_par_EST <- levels(data_par$EST)
+EST_n <- length(data_par_EST)
+assign(paste0(nom_par[k], "_data"), data_par)
+
+
+ggplotly(total_plot(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+```
+```{r}
+assign(paste0(nom_par[k], "_sum"), summary_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+kable(eval(as.name(paste0(nom_par[k], "_sum"))), align = "c") %>% kable_styling(c("striped", "hover"), full_width = F)%>% scroll_box(width="100%", height="300px", fixed_thead = TRUE)
+```
+
+```{r}
+assign(paste0(nom_par[k], "_box"), box_param(eval(as.name(paste0(nom_par[k], "_data"))), nom_par[k]))
+
+
+if(EST_n<=12){
+  ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1)
+}
+  
+if(EST_n>12 & EST_n<=24){
+  plot_2 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2))
+    htmltools::tagList(plot_2)
+  }
+  
+  if(EST_n>24){
+    plot_3 <- list(ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_1),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_2),
+    ggplotly(eval(as.name(paste0(nom_par[k], "_box")))$box_3))
+    htmltools::tagList(plot_3)
+  }
+
+k <- k+1
+```
+
+
+
+
+
