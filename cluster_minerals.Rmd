@@ -1,0 +1,86 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+library(RcmdrMisc)
+library(ggdendro)
+library(corrplot)
+library(circlize)
+library(FactoMineR)
+library(ggcorrplot)
+library(dplyr)
+library(pracma)
+library(abind)
+library(tinytex)
+library(ggplot2)
+library(tidyverse)
+library(factoextra)
+library(fitdistrplus)
+library(logspline)
+library(broom)
+library(MASS)
+library(knitr)
+library(kableExtra)
+library(multcomp)
+library(lubridate)
+library(openxlsx)
+library(ggpubr)
+library(plotly)
+library(ggdendro)
+
+
+library(RColorBrewer)
+```
+
+```{r}
+CHAPALA_previo<- read.csv("minerals.csv", header=TRUE, stringsAsFactors=FALSE)
+CHAPALA_previo<- as_tibble(CHAPALA_previo)
+CHAPALA_previo$FECHA <- as_date(CHAPALA_previo$FECHA) 
+CHAPALA_previo$EST <- factor(CHAPALA_previo$EST)
+CHAPALA_previo$Year <- year(CHAPALA_previo$FECHA)
+CH_n <- dim(CHAPALA_previo)[1]
+
+
+
+CHAPALA_NA <- sapply(CHAPALA_previo, function(x) sum(is.na(x))/CH_n)[4:7]
+CHAPALA_M <- names(CHAPALA_NA[CHAPALA_NA<0.2])
+
+
+CHAPALA <- dplyr::select(CHAPALA_previo, EST, CLAVE_SITIO, FECHA, all_of(CHAPALA_M)) %>% na.omit()
+CHAPALA$EST <- factor(CHAPALA$EST)
+
+
+load("LDA_minerals.RData")
+```
+
+```{r}
+dist_CH_p <- CHAPALA %>% group_by(EST) %>%  dplyr::summarise_if(is.numeric, mean)
+nom_E <- dist_CH_p$EST
+dist_CH <- dist_CH_p %>%  dplyr::select(DBO_SOL:DQO_TOT)  %>% scale(center=TRUE, scale = TRUE)%>% as.data.frame()
+rownames(dist_CH) <- nom_E
+distancia_CH <- dist(dist_CH, method="euclidean")
+clust_CH <- hclust(distancia_CH, method="ward.D2")  
+fviz_dend(clust_CH, k=5, cex=1, lwd=1, rect = TRUE)
+```
+
+```{r}
+dist_CH_p_sub <- CHAPALA %>% group_by(EST) %>%  dplyr::summarise_if(is.numeric, mean) %>% dplyr::select(EST, all_of(subset_par_1))
+
+nom_E_sub <- dist_CH_p_sub$EST
+
+dist_CH_sub <- dist_CH_p_sub %>%  dplyr::select(-EST)  %>% scale(center=TRUE, scale = TRUE)%>% as.data.frame()
+
+rownames(dist_CH_sub) <- nom_E
+
+distancia_CH_sub <- dist(dist_CH_sub, method="euclidean")
+
+clust_CH_sub <- hclust(distancia_CH_sub, method="ward.D2") 
+
+fviz_dend(clust_CH_sub, k=7, cex=1, lwd=1, rect = TRUE)
+```
